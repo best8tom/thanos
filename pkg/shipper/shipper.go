@@ -14,16 +14,16 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/improbable-eng/thanos/pkg/block"
-	"github.com/improbable-eng/thanos/pkg/block/metadata"
-	"github.com/improbable-eng/thanos/pkg/objstore"
-	"github.com/improbable-eng/thanos/pkg/runutil"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/tsdb"
-	"github.com/prometheus/tsdb/fileutil"
-	"github.com/prometheus/tsdb/labels"
+	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/tsdb/labels"
+	"github.com/thanos-io/thanos/pkg/block"
+	"github.com/thanos-io/thanos/pkg/block/metadata"
+	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/thanos/pkg/runutil"
 )
 
 type metrics struct {
@@ -77,7 +77,6 @@ func newMetrics(r prometheus.Registerer, uploadCompacted bool) *metrics {
 type Shipper struct {
 	logger          log.Logger
 	dir             string
-	workDir         string
 	metrics         *metrics
 	bucket          objstore.Bucket
 	labels          func() labels.Labels
@@ -248,9 +247,9 @@ func (c *lazyOverlapChecker) IsOverlapping(ctx context.Context, newMeta tsdb.Blo
 // Sync performs a single synchronization, which ensures all non-compacted local blocks have been uploaded
 // to the object bucket once.
 //
-// If updload
+// If uploaded.
 //
-// It is not concurrency-safe, however it is compactor-safe (running concurrently with compactor is ok)
+// It is not concurrency-safe, however it is compactor-safe (running concurrently with compactor is ok).
 func (s *Shipper) Sync(ctx context.Context) (uploaded int, err error) {
 	meta, err := ReadMetaFile(s.dir)
 	if err != nil {
@@ -260,7 +259,7 @@ func (s *Shipper) Sync(ctx context.Context) (uploaded int, err error) {
 		if !os.IsNotExist(err) {
 			level.Warn(s.logger).Log("msg", "reading meta file failed, will override it", "err", err)
 		}
-		meta = &Meta{Version: 1}
+		meta = &Meta{Version: MetaVersion1}
 	}
 
 	// Build a map of blocks we already uploaded.
@@ -381,10 +380,12 @@ func (s *Shipper) upload(ctx context.Context, meta *metadata.Meta) error {
 	return block.Upload(ctx, s.logger, s.bucket, updir)
 }
 
-// iterBlockMetas calls f with the block meta for each block found in dir. It logs
-// an error and continues if it cannot access a meta.json file.
+// iterBlockMetas calls f with the block meta for each block found in dir
+// sorted by minTime asc. It logs an error and continues if it cannot access a
+// meta.json file.
 // If f returns an error, the function returns with the same error.
 func (s *Shipper) iterBlockMetas(f func(m *metadata.Meta) error) error {
+	var metas []*metadata.Meta
 	names, err := fileutil.ReadDir(s.dir)
 	if err != nil {
 		return errors.Wrap(err, "read dir")
@@ -408,6 +409,13 @@ func (s *Shipper) iterBlockMetas(f func(m *metadata.Meta) error) error {
 			level.Warn(s.logger).Log("msg", "reading meta file failed", "err", err)
 			continue
 		}
+		metas = append(metas, m)
+	}
+	sort.Slice(metas, func(i, j int) bool {
+		return metas[i].BlockMeta.MinTime < metas[j].BlockMeta.MinTime
+	})
+	for _, m := range metas {
+
 		if err := f(m); err != nil {
 			return err
 		}
@@ -439,14 +447,19 @@ func hardlinkBlock(src, dst string) error {
 	return nil
 }
 
-// Meta defines the fomart thanos.shipper.json file that the shipper places in the data directory.
+// Meta defines the format thanos.shipper.json file that the shipper places in the data directory.
 type Meta struct {
 	Version  int         `json:"version"`
 	Uploaded []ulid.ULID `json:"uploaded"`
 }
 
-// MetaFilename is the known JSON filename for meta information.
-const MetaFilename = "thanos.shipper.json"
+const (
+	// MetaFilename is the known JSON filename for meta information.
+	MetaFilename = "thanos.shipper.json"
+
+	// MetaVersion1 represents 1 version of meta.
+	MetaVersion1 = 1
+)
 
 // WriteMetaFile writes the given meta into <dir>/thanos.shipper.json.
 func WriteMetaFile(logger log.Logger, dir string, meta *Meta) error {
@@ -483,7 +496,7 @@ func ReadMetaFile(dir string) (*Meta, error) {
 	if err := json.Unmarshal(b, &m); err != nil {
 		return nil, err
 	}
-	if m.Version != 1 {
+	if m.Version != MetaVersion1 {
 		return nil, errors.Errorf("unexpected meta file version %d", m.Version)
 	}
 

@@ -11,7 +11,7 @@ Service discovery has a vital place in Thanos components. It allows Thanos to di
 
 Currently places that uses Thanos SD:
 
-* `Thanos Query` needs to know about [StoreAPI](https://github.com/improbable-eng/thanos/blob/d3fb337da94d11c78151504b1fccb1d7e036f394/pkg/store/storepb/rpc.proto#L14) servers in order to query metrics from them.
+* `Thanos Query` needs to know about [StoreAPI](https://github.com/thanos-io/thanos/blob/d3fb337da94d11c78151504b1fccb1d7e036f394/pkg/store/storepb/rpc.proto#L14) servers in order to query metrics from them.
 * `Thanos Rule` needs to know about `QueryAPI` servers in order to evaluate recording and alerting rules.
 * (Only static option with DNS discovery): `Thanos Rule` needs to know about `Alertmanagers` HA replicas in order to send alerts.
 
@@ -90,10 +90,16 @@ An example using this lookup with a static flag:
 --store=dns+stores.thanos.mycompany.org:9090
 ```
 
-* `dnssrv+` - the domain name after this prefix will be looked up as a SRV query. You do not need to specify a port as the
-one from the query results will be used. An example:
+* `dnssrv+` - the domain name after this prefix will be looked up as a SRV query, and then each SRV record will be looked up as an A/AAAA query. You do not need to specify a port as the one from the query results will be used. An example:
+
 ```
 --store=dnssrv+_thanosstores._tcp.mycompany.org
+```
+
+* `dnssrvnoa+` - the domain name after this prefix will be looked up as a SRV query, with no A/AAAA lookup made after that. Similar to the `dnssrv+` case, you do not need to specify a port. An example:
+
+```
+--store=dnssrvnoa+_thanosstores._tcp.mycompany.org
 ```
 
 The default interval between DNS lookups is 30s. You can change it using the `store.sd-dns-interval` flag for `StoreAPI`

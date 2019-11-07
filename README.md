@@ -1,10 +1,9 @@
 <p align="center"><img src="docs/img/Thanos-logo_fullmedium.png" alt="Thanos Logo"></p>
 
-[![CircleCI](https://circleci.com/gh/improbable-eng/thanos.svg?style=svg)](https://circleci.com/gh/improbable-eng/thanos)
-[![Go Report Card](https://goreportcard.com/badge/github.com/improbable-eng/thanos)](https://goreportcard.com/report/github.com/improbable-eng/thanos)
-[![GoDoc](https://godoc.org/github.com/improbable-eng/thanos?status.svg)](https://godoc.org/github.com/improbable-eng/thanos)
-[![Slack](https://img.shields.io/badge/join%20slack-%23thanos-brightgreen.svg)](https://join.slack.com/t/improbable-eng/shared_invite/enQtMzQ1ODcyMzQ5MjM4LWY5ZWZmNGM2ODc5MmViNmQ3ZTA3ZTY3NzQwOTBlMTkzZmIxZTIxODk0OWU3YjZhNWVlNDU3MDlkZGViZjhkMjc)
-[![Docker Pulls](https://img.shields.io/docker/pulls/improbable/thanos.svg?maxAge=604800)](https://hub.docker.com/r/improbable/thanos/)
+[![CircleCI](https://circleci.com/gh/thanos-io/thanos.svg?style=svg)](https://circleci.com/gh/thanos-io/thanos)
+[![Go Report Card](https://goreportcard.com/badge/github.com/thanos-io/thanos)](https://goreportcard.com/report/github.com/thanos-io/thanos)
+[![GoDoc](https://godoc.org/github.com/thanos-io/thanos?status.svg)](https://godoc.org/github.com/thanos-io/thanos)
+[![Slack](https://img.shields.io/badge/join%20slack-%23thanos-brightgreen.svg)](https://slack.cncf.io/)
 [![Netlify Status](https://api.netlify.com/api/v1/badges/664a5091-934c-4b0e-a7b6-bc12f822a590/deploy-status)](https://app.netlify.com/sites/thanos-io/deploys)
 
 ## Overview
@@ -12,6 +11,8 @@
 Thanos is a set of components that can be composed into a highly available metric
 system with unlimited storage capacity, which can be added seamlessly on top of existing
 Prometheus deployments.
+
+Thanos is a [CNCF](https://www.cncf.io/) Sandbox project.
 
 Thanos leverages the Prometheus 2.0 storage format to cost-efficiently store historical metric
 data in any object storage while retaining fast query latencies. Additionally, it provides
@@ -24,17 +25,12 @@ Concretely the aims of the project are:
 1. Unlimited retention of metrics.
 1. High availability of components, including Prometheus.
 
-## Architecture Overview
-
-![architecture_overview](docs/img/arch.jpg)
-
 ## Getting Started
 
 * **[Getting Started](https://thanos.io/getting-started.md/)**
 * [Design](https://thanos.io/design.md/)
-* [Prom Meetup Slides](https://www.slideshare.net/BartomiejPotka/thanos-global-durable-prometheus-monitoring)
-* [Introduction blog post](https://improbable.io/games/blog/thanos-prometheus-at-scale)
-* [Benchmarks](https://github.com/improbable-eng/thanos/tree/master/benchmark)
+* [Blog posts](docs/getting-started.md#blog-posts)
+* [Talks](docs/getting-started.md#talks)
 * [Proposals](docs/proposals)
 * [Integrations](docs/integrations.md)
 
@@ -50,6 +46,10 @@ Concretely the aims of the project are:
 * Simple gRPC "Store API" for unified data access across all metric data
 * Easy integration points for custom metric providers
 
+## Architecture Overview
+
+![architecture_overview](docs/img/arch.jpg)
+
 ## Thanos Philosophy
 
 The philosophy of Thanos and our community is borrowing much from UNIX philosophy and the golang programming language.
@@ -63,10 +63,11 @@ The philosophy of Thanos and our community is borrowing much from UNIX philosoph
 
 ## Releases
 
-Master should be stable and usable. Every commit to master builds docker image named `master-<data>-<sha>`.
+Master should be stable and usable. Every commit to master builds docker image named `master-<data>-<sha>` in [quay.io/thanos/thanos](https://quay.io/repository/thanos/thanos) and [thanosio/thanos dockerhub (mirror)](https://hub.docker.com/r/thanosio/thanos)
 
-We also perform minor releases every 6 weeks. 
-During that, we build tarballs for major platforms and docker image.
+We also perform minor releases every 6 weeks.
+
+During that, we build tarballs for major platforms and release docker images.
 
 See [release process docs](docs/release-process.md) for details.
 
@@ -79,8 +80,8 @@ Contributions are very welcome! See our [CONTRIBUTING.md](CONTRIBUTING.md) for m
 Thanos is an open source project and we value and welcome new contributors and members
 of the community. Here are ways to get in touch with the community:
 
-* Slack: [#thanos](https://join.slack.com/t/improbable-eng/shared_invite/enQtMzQ1ODcyMzQ5MjM4LWY5ZWZmNGM2ODc5MmViNmQ3ZTA3ZTY3NzQwOTBlMTkzZmIxZTIxODk0OWU3YjZhNWVlNDU3MDlkZGViZjhkMjc)
-* Issue Tracker: [GitHub Issues](https://github.com/improbable-eng/thanos/issues)
+* Slack: [#thanos](https://slack.cncf.io/)
+* Issue Tracker: [GitHub Issues](https://github.com/thanos-io/thanos/issues)
 
 ## Maintainers
 

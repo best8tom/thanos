@@ -30,7 +30,7 @@ $ thanos rule \
     --query                "query2.example.org" \
     --objstore.config-file "bucket.yml" \
     --label                'monitor_cluster="cluster1"'
-    --label                'replica="A"
+    --label                'replica="A"'
 ```
 
 ## Risk
@@ -138,9 +138,9 @@ In case of Ruler in HA you need to make sure you have the following labelling se
 * Labels that identify the HA group ruler and replica label with different value for each ruler instance, e.g: 
 `cluster="eu1", replica="A"` and `cluster=eu1, replica="B"` by using `--label` flag.
 * Labels that need to be dropped just before sending to alermanager in order for alertmanager to deduplicate alerts e.g
-`--alertmanager.label-drop="replica"`.
+`--alert.label-drop="replica"`.
 
-Full relabelling is planned to be done in future and is tracked here: https://github.com/improbable-eng/thanos/issues/660
+Full relabelling is planned to be done in future and is tracked here: https://github.com/thanos-io/thanos/issues/660
 
 ## Flags
 
@@ -157,18 +157,25 @@ Flags:
       --version                  Show application version.
       --log.level=info           Log filtering level.
       --log.format=logfmt        Log format to use.
-      --tracing.config-file=<tracing.config-yaml-path>
-                                 Path to YAML file that contains tracing
-                                 configuration.
-      --tracing.config=<tracing.config-yaml>
-                                 Alternative to 'tracing.config-file' flag.
-                                 Tracing configuration in YAML.
+      --tracing.config-file=<file-path>
+                                 Path to YAML file with tracing configuration.
+                                 See format details:
+                                 https://thanos.io/tracing.md/#configuration
+      --tracing.config=<content>
+                                 Alternative to 'tracing.config-file' flag
+                                 (lower priority). Content of YAML file with
+                                 tracing configuration. See format details:
+                                 https://thanos.io/tracing.md/#configuration
       --http-address="0.0.0.0:10902"
                                  Listen host:port for HTTP endpoints.
+      --http-grace-period=2m     Time to wait after an interrupt received for
+                                 HTTP Server.
       --grpc-address="0.0.0.0:10901"
                                  Listen ip:port address for gRPC endpoints
                                  (StoreAPI). Make sure this address is routable
                                  from other components.
+      --grpc-grace-period=2m     Time to wait after an interrupt received for
+                                 GRPC Server.
       --grpc-server-tls-cert=""  TLS Certificate for gRPC server, leave blank to
                                  disable TLS
       --grpc-server-tls-key=""   TLS Key for the gRPC server, leave blank to
@@ -185,6 +192,8 @@ Flags:
       --data-dir="data/"         data directory
       --rule-file=rules/ ...     Rule files that should be used by rule manager.
                                  Can be in glob format (repeated).
+      --resend-delay=1m          Minimum amount of time to wait before resending
+                                 an alert to Alertmanager.
       --eval-interval=30s        The default evaluation interval to use.
       --tsdb.block-duration=2h   Block duration for TSDB block.
       --tsdb.retention=48h       Block retention time on local disk.
@@ -231,12 +240,16 @@ Flags:
                                  stripped prefix value in X-Forwarded-Prefix
                                  header. This allows thanos UI to be served on a
                                  sub-path.
-      --objstore.config-file=<bucket.config-yaml-path>
+      --objstore.config-file=<file-path>
                                  Path to YAML file that contains object store
-                                 configuration.
-      --objstore.config=<bucket.config-yaml>
-                                 Alternative to 'objstore.config-file' flag.
-                                 Object store configuration in YAML.
+                                 configuration. See format details:
+                                 https://thanos.io/storage.md/#configuration
+      --objstore.config=<content>
+                                 Alternative to 'objstore.config-file' flag
+                                 (lower priority). Content of YAML file that
+                                 contains object store configuration. See format
+                                 details:
+                                 https://thanos.io/storage.md/#configuration
       --query=<query> ...        Addresses of statically configured query API
                                  servers (repeatable). The scheme may be
                                  prefixed with 'dns+' or 'dnssrv+' to detect

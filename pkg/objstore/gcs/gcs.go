@@ -5,21 +5,19 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math/rand"
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"cloud.google.com/go/storage"
 	"github.com/go-kit/kit/log"
-	"github.com/improbable-eng/thanos/pkg/objstore"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/version"
+	"github.com/thanos-io/thanos/pkg/objstore"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 )
 
 // DirDelim is the delimiter used to model a directory structure in an object store bucket.
@@ -168,9 +166,9 @@ func (b *Bucket) Close() error {
 // In a close function it empties and deletes the bucket.
 func NewTestBucket(t testing.TB, project string) (objstore.Bucket, func(), error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	src := rand.NewSource(time.Now().UnixNano())
+	defer cancel()
 	gTestConfig := Config{
-		Bucket: fmt.Sprintf("test_%s_%x", strings.ToLower(t.Name()), src.Int63()),
+		Bucket: objstore.CreateTemporaryTestBucketName(t),
 	}
 
 	bc, err := yaml.Marshal(gTestConfig)
@@ -180,12 +178,10 @@ func NewTestBucket(t testing.TB, project string) (objstore.Bucket, func(), error
 
 	b, err := NewBucket(ctx, log.NewNopLogger(), bc, "thanos-e2e-test")
 	if err != nil {
-		cancel()
 		return nil, nil, err
 	}
 
 	if err = b.bkt.Create(ctx, project, nil); err != nil {
-		cancel()
 		_ = b.Close()
 		return nil, nil, err
 	}
@@ -196,7 +192,6 @@ func NewTestBucket(t testing.TB, project string) (objstore.Bucket, func(), error
 		if err := b.bkt.Delete(ctx); err != nil {
 			t.Logf("deleting bucket failed: %s", err)
 		}
-		cancel()
 		if err := b.Close(); err != nil {
 			t.Logf("closing bucket failed: %s", err)
 		}

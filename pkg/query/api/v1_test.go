@@ -29,50 +29,83 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fortytw2/leaktest"
 	"github.com/go-kit/kit/log"
-	"github.com/improbable-eng/thanos/pkg/compact"
-	"github.com/improbable-eng/thanos/pkg/query"
-	"github.com/improbable-eng/thanos/pkg/testutil"
 	opentracing "github.com/opentracing/opentracing-go"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/storage"
+	tsdb_labels "github.com/prometheus/prometheus/tsdb/labels"
+	"github.com/thanos-io/thanos/pkg/compact"
+	"github.com/thanos-io/thanos/pkg/component"
+	extpromhttp "github.com/thanos-io/thanos/pkg/extprom/http"
+	"github.com/thanos-io/thanos/pkg/query"
+	"github.com/thanos-io/thanos/pkg/store"
+	"github.com/thanos-io/thanos/pkg/testutil"
 )
 
-func testQueryableCreator(queryable storage.Queryable) query.QueryableCreator {
-	return func(_ bool, _ int64, _ bool, _ query.WarningReporter) storage.Queryable {
-		return queryable
-	}
-}
-
 func TestEndpoints(t *testing.T) {
-	suite, err := promql.NewTest(t, `
-		load 1m
-			test_metric1{foo="bar"} 0+100x100
-			test_metric1{foo="boo"} 1+0x100
-			test_metric2{foo="boo"} 1+0x100
-	`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer suite.Close()
+	defer leaktest.CheckTimeout(t, 10*time.Second)()
 
-	if err := suite.Run(); err != nil {
-		t.Fatal(err)
+	lbls := []tsdb_labels.Labels{
+		tsdb_labels.Labels{
+			tsdb_labels.Label{Name: "__name__", Value: "test_metric1"},
+			tsdb_labels.Label{Name: "foo", Value: "bar"},
+		},
+		tsdb_labels.Labels{
+			tsdb_labels.Label{Name: "__name__", Value: "test_metric1"},
+			tsdb_labels.Label{Name: "foo", Value: "boo"},
+		},
+		tsdb_labels.Labels{
+			tsdb_labels.Label{Name: "__name__", Value: "test_metric2"},
+			tsdb_labels.Label{Name: "foo", Value: "boo"},
+		},
+		tsdb_labels.Labels{
+			tsdb_labels.Label{Name: "__name__", Value: "test_metric_replica1"},
+			tsdb_labels.Label{Name: "foo", Value: "bar"},
+			tsdb_labels.Label{Name: "replica", Value: "a"},
+		},
+		tsdb_labels.Labels{
+			tsdb_labels.Label{Name: "__name__", Value: "test_metric_replica1"},
+			tsdb_labels.Label{Name: "foo", Value: "boo"},
+			tsdb_labels.Label{Name: "replica", Value: "a"},
+		},
+		tsdb_labels.Labels{
+			tsdb_labels.Label{Name: "__name__", Value: "test_metric_replica1"},
+			tsdb_labels.Label{Name: "foo", Value: "boo"},
+			tsdb_labels.Label{Name: "replica", Value: "b"},
+		},
+		tsdb_labels.Labels{
+			tsdb_labels.Label{Name: "__name__", Value: "test_metric_replica1"},
+			tsdb_labels.Label{Name: "foo", Value: "boo"},
+			tsdb_labels.Label{Name: "replica1", Value: "a"},
+		},
 	}
+
+	db, err := testutil.NewTSDB()
+	defer func() { testutil.Ok(t, db.Close()) }()
+	testutil.Ok(t, err)
+
+	app := db.Appender()
+	for _, lbl := range lbls {
+		for i := int64(0); i < 10; i++ {
+			_, err := app.Add(lbl, i*60000, float64(i))
+			testutil.Ok(t, err)
+		}
+	}
+	testutil.Ok(t, app.Commit())
 
 	now := time.Now()
-
 	api := &API{
-		queryableCreate: testQueryableCreator(suite.Storage()),
-		queryEngine:     suite.QueryEngine(),
-
-		instantQueryDuration: prometheus.NewHistogram(prometheus.HistogramOpts{}),
-		rangeQueryDuration:   prometheus.NewHistogram(prometheus.HistogramOpts{}),
-
+		queryableCreate: query.NewQueryableCreator(nil, store.NewTSDBStore(nil, nil, db, component.Query, nil)),
+		queryEngine: promql.NewEngine(promql.EngineOpts{
+			Logger:        nil,
+			Reg:           nil,
+			MaxConcurrent: 20,
+			MaxSamples:    10000,
+			Timeout:       100 * time.Second,
+		}),
 		now: func() time.Time { return now },
 	}
 
@@ -125,6 +158,211 @@ func TestEndpoints(t *testing.T) {
 				Result: promql.Scalar{
 					V: 0.333,
 					T: timestamp.FromTime(start.Add(123 * time.Second)),
+				},
+			},
+		},
+		// Query endpoint without deduplication.
+		{
+			endpoint: api.query,
+			query: url.Values{
+				"query": []string{"test_metric_replica1"},
+				"time":  []string{"1970-01-01T01:02:03+01:00"},
+			},
+			response: &queryData{
+				ResultType: promql.ValueTypeVector,
+				Result: promql.Vector{
+					{
+						Metric: labels.Labels{
+							{
+								Name:  "__name__",
+								Value: "test_metric_replica1",
+							},
+							{
+								Name:  "foo",
+								Value: "bar",
+							},
+							{
+								Name:  "replica",
+								Value: "a",
+							},
+						},
+						Point: promql.Point{
+							T: 123000,
+							V: 2,
+						},
+					},
+					{
+						Metric: labels.Labels{
+							{
+								Name:  "__name__",
+								Value: "test_metric_replica1",
+							},
+							{
+								Name:  "foo",
+								Value: "boo",
+							},
+							{
+								Name:  "replica",
+								Value: "a",
+							},
+						},
+						Point: promql.Point{
+							T: 123000,
+							V: 2,
+						},
+					},
+					{
+						Metric: labels.Labels{
+							{
+								Name:  "__name__",
+								Value: "test_metric_replica1",
+							},
+							{
+								Name:  "foo",
+								Value: "boo",
+							},
+							{
+								Name:  "replica",
+								Value: "b",
+							},
+						},
+						Point: promql.Point{
+							T: 123000,
+							V: 2,
+						},
+					},
+					{
+						Metric: labels.Labels{
+							{
+								Name:  "__name__",
+								Value: "test_metric_replica1",
+							},
+							{
+								Name:  "foo",
+								Value: "boo",
+							},
+							{
+								Name:  "replica1",
+								Value: "a",
+							},
+						},
+						Point: promql.Point{
+							T: 123000,
+							V: 2,
+						},
+					},
+				},
+			},
+		},
+		// Query endpoint with single deduplication label.
+		{
+			endpoint: api.query,
+			query: url.Values{
+				"query":           []string{"test_metric_replica1"},
+				"time":            []string{"1970-01-01T01:02:03+01:00"},
+				"replicaLabels[]": []string{"replica"},
+			},
+			response: &queryData{
+				ResultType: promql.ValueTypeVector,
+				Result: promql.Vector{
+					{
+						Metric: labels.Labels{
+							{
+								Name:  "__name__",
+								Value: "test_metric_replica1",
+							},
+							{
+								Name:  "foo",
+								Value: "bar",
+							},
+						},
+						Point: promql.Point{
+							T: 123000,
+							V: 2,
+						},
+					},
+					{
+						Metric: labels.Labels{
+							{
+								Name:  "__name__",
+								Value: "test_metric_replica1",
+							},
+							{
+								Name:  "foo",
+								Value: "boo",
+							},
+						},
+						Point: promql.Point{
+							T: 123000,
+							V: 2,
+						},
+					},
+					{
+						Metric: labels.Labels{
+							{
+								Name:  "__name__",
+								Value: "test_metric_replica1",
+							},
+							{
+								Name:  "foo",
+								Value: "boo",
+							},
+							{
+								Name:  "replica1",
+								Value: "a",
+							},
+						},
+						Point: promql.Point{
+							T: 123000,
+							V: 2,
+						},
+					},
+				},
+			},
+		},
+		// Query endpoint with multiple deduplication label.
+		{
+			endpoint: api.query,
+			query: url.Values{
+				"query":           []string{"test_metric_replica1"},
+				"time":            []string{"1970-01-01T01:02:03+01:00"},
+				"replicaLabels[]": []string{"replica", "replica1"},
+			},
+			response: &queryData{
+				ResultType: promql.ValueTypeVector,
+				Result: promql.Vector{
+					{
+						Metric: labels.Labels{
+							{
+								Name:  "__name__",
+								Value: "test_metric_replica1",
+							},
+							{
+								Name:  "foo",
+								Value: "bar",
+							},
+						},
+						Point: promql.Point{
+							T: 123000,
+							V: 2,
+						},
+					},
+					{
+						Metric: labels.Labels{
+							{
+								Name:  "__name__",
+								Value: "test_metric_replica1",
+							},
+							{
+								Name:  "foo",
+								Value: "boo",
+							},
+						},
+						Point: promql.Point{
+							T: 123000,
+							V: 2,
+						},
+					},
 				},
 			},
 		},
@@ -252,7 +490,7 @@ func TestEndpoints(t *testing.T) {
 			},
 			errType: errorBadData,
 		},
-		// Bad dedup parameter
+		// Bad dedup parameter.
 		{
 			endpoint: api.queryRange,
 			query: url.Values{
@@ -272,6 +510,7 @@ func TestEndpoints(t *testing.T) {
 			response: []string{
 				"test_metric1",
 				"test_metric2",
+				"test_metric_replica1",
 			},
 		},
 		{
@@ -300,6 +539,14 @@ func TestEndpoints(t *testing.T) {
 			response: []labels.Labels{
 				labels.FromStrings("__name__", "test_metric2", "foo", "boo"),
 			},
+		},
+		// Series that does not exist should return an empty array.
+		{
+			endpoint: api.series,
+			query: url.Values{
+				"match[]": []string{`foobar`},
+			},
+			response: []labels.Labels{},
 		},
 		{
 			endpoint: api.series,
@@ -336,7 +583,7 @@ func TestEndpoints(t *testing.T) {
 				"start":   []string{"-2"},
 				"end":     []string{"-1"},
 			},
-			response: []labels.Labels(nil),
+			response: []labels.Labels{},
 		},
 		// Start and end after series ends.
 		{
@@ -346,7 +593,7 @@ func TestEndpoints(t *testing.T) {
 				"start":   []string{"100000"},
 				"end":     []string{"100001"},
 			},
-			response: []labels.Labels(nil),
+			response: []labels.Labels{},
 		},
 		// Start before series starts, end after series ends.
 		{
@@ -457,7 +704,7 @@ func TestEndpoints(t *testing.T) {
 				"start":   []string{"-2"},
 				"end":     []string{"-1"},
 			},
-			response: []labels.Labels(nil),
+			response: []labels.Labels{},
 		},
 		// Start and end after series ends.
 		{
@@ -467,7 +714,7 @@ func TestEndpoints(t *testing.T) {
 				"start":   []string{"100000"},
 				"end":     []string{"100001"},
 			},
-			response: []labels.Labels(nil),
+			response: []labels.Labels{},
 		},
 		// Start before series starts, end after series ends.
 		{
@@ -576,7 +823,7 @@ func TestEndpoints(t *testing.T) {
 				}
 				return
 			}
-			if apiErr == nil && test.errType != errorNone {
+			if test.errType != errorNone {
 				t.Fatalf("Expected error of type %q but got none", test.errType)
 			}
 
@@ -774,7 +1021,7 @@ func TestParseDuration(t *testing.T) {
 func TestOptionsMethod(t *testing.T) {
 	r := route.New()
 	api := &API{}
-	api.Register(r, &opentracing.NoopTracer{}, log.NewNopLogger())
+	api.Register(r, &opentracing.NoopTracer{}, log.NewNopLogger(), extpromhttp.NewNopInstrumentationMiddleware())
 
 	s := httptest.NewServer(r)
 	defer s.Close()
@@ -893,7 +1140,8 @@ func TestParseDownsamplingParamMillis(t *testing.T) {
 		v.Set("max_source_resolution", test.maxSourceResolutionParam)
 		r := http.Request{PostForm: v}
 
-		maxResMillis, _ := api.parseDownsamplingParamMillis(&r, test.step)
+		// If no max_source_resolution is specified fit at least 5 samples between steps.
+		maxResMillis, _ := api.parseDownsamplingParamMillis(&r, test.step/5)
 		if test.fail == false {
 			testutil.Assert(t, maxResMillis == test.result, "case %v: expected %v to be equal to %v", i, maxResMillis, test.result)
 		} else {
